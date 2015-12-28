@@ -1,0 +1,26 @@
+{
+  "name": "gc-slackbot",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "lint": "gulp lint-src",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "babel": "^6.3.26",
+    "babel-core": "^6.3.26",
+    "babel-preset-es2015": "^6.3.13",
+    "botkit": "0.0.4",
+    "dotenv": "^1.2.0",
+    "promise": "^7.1.1"
+  },
+  "devDependencies": {
+    "babel-eslint": "^4.1.6",
+    "gulp": "^3.9.0",
+    "gulp-eslint": "^1.1.1"
+  }
+}
