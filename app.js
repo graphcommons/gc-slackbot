@@ -1,27 +1,59 @@
 'use strict';
 
 import Botkit from 'botkit';
+import memStorage from './utils/mem-storage';
 import { asyncCollect, asyncWaterfall, asyncify } from './utils/async';
+import gcConnector from './utils/gc-scheduler';
 
-// WE MAY NOT NEED THIS
-// const SLACK_INCOMING_WEBHOOK_URL = `https://hooks.slack.com/services/${process.env.SLACK_WEBHOOK}`;
+const GC_CONNECTOR = gcConnector();
 
 const controller = Botkit.slackbot({
   debug: process.env.DEBUG === 'true',
-  json_file_store: 'team-storage'
+  storage: memStorage
 });
 
 const bot = controller.spawn({
   token: process.env.SLACK_TOKEN
 });
 
+// SENDS signals to the GC_CONNECTOR
+// if the argument is a Promise, waits for the resolution
+// or calls the connector right away
 function sendToQueue(obj) {
   if (typeof obj.then === 'function') {
-    obj.then(_ => console.dir(_));
+    obj.then((res) => {
+      if (res) {
+        GC_CONNECTOR.addSignals(res);
+      }
+    });
   }
   else {
-    console.dir(obj);
+    if (obj) {
+      GC_CONNECTOR.addSignals(obj);
+    }
   }
+}
+
+function saveUser (user) {
+  return {
+    action: 'node_create',
+    type: 'User',
+    name: user.name,
+    properties: {
+      user_id: user.id
+    }
+  };
+}
+
+function saveChannel(channel) {
+  return {
+    action: 'node_create',
+    type: 'Channel',
+    name: channel.name,
+    properties: {
+      channel_id: channel.id
+    }
+  };
 }
 
 function asyncSaveChannelMembers(channel) {
@@ -30,20 +62,6 @@ function asyncSaveChannelMembers(channel) {
       done(createUserMEMBEROFChannel(user_data.name, channel.name));
     });
   });
-}
-
-function saveChannel(channel) {
-  let signals = [];
-  signals.push({
-    action: 'node_create',
-    type: 'Channel',
-    name: channel.name,
-    properties: {
-      channel_id: channel.id
-    }
-  });
-
-  return signals;
 }
 
 function createUserMEMBEROFChannel(user, channel) {
@@ -60,62 +78,63 @@ function createUserMEMBEROFChannel(user, channel) {
   };
 }
 
-function saveMessageEvent(message) {
-  return asyncify((done, fail) => {
-    controller.storage.channels.get(message.channel, (err, channel_data) => {
-      if (err) {
-        return fail(err);
-      }
+function saveMessage(message) {
 
-      controller.storage.users.get(message.user, (err, user_data) => {
-        if (err) {
-          return fail(err);
-        }
+  let signals = [];
+  const channel_data = controller.storage.channels.getSync(message.channel);
+  const user_data = controller.storage.users.getSync(message.user);
+  if (!channel_data || !user_data) {
+    return null;
+  }
 
-        const messageSignal = {
-          action: 'node_create',
-          type: 'Message',
-          name: `${user_data.name} - ${message.ts}`,
-          description: message.text,
-          properties: {
-            ts: message.ts,
-            channel_name: channel_data.name
-          }
-        };
-
-        const userMessageSignal = {
-          action: 'edge_create',
-          name: 'SENT_MESSAGE',
-          from_type: 'User',
-          from_name: user_data.name,
-          to_type: 'Message',
-          to_name: messageSignal.name
-        };
-
-        const messageChannelSignal = {
-          action: 'edge_create',
-          name: 'MESSAGE_IN',
-          from_type: 'Message',
-          from_name: messageSignal.name,
-          to_type: 'Channel',
-          to_name: channel_data.name
-        };
-
-        done([messageSignal, userMessageSignal, messageChannelSignal]);
-      });
-    });
-  });
-}
-
-function saveUser (user) {
-  return {
+  const message_name = `${user_data.name} - ${message.ts}`;
+  signals.push({
     action: 'node_create',
-    type: 'User',
-    name: user.name,
+    type: 'Message',
+    name: message_name,
+    description: message.text,
     properties: {
-      user_id: user.id
+      ts: message.ts,
+      channel_name: channel_data.name
     }
-  };
+  });
+
+  signals.push({
+    action: 'edge_create',
+    name: 'SENT_MESSAGE',
+    from_type: 'User',
+    from_name: user_data.name,
+    to_type: 'Message',
+    to_name: message_name
+  });
+
+  signals.push({
+    action: 'edge_create',
+    name: 'MESSAGE_IN',
+    from_type: 'Message',
+    from_name: message_name,
+    to_type: 'Channel',
+    to_name: channel_data.name
+  });
+
+  let mentionMatches = message.text.match(/<@(U[^\s]+)>/);
+  if (mentionMatches.length > 0) {
+    mentionMatches.forEach( (match) => {
+      let mentioned_user = controller.storage.users.getSync(match);
+      if (mentioned_user) {
+        signals.push({
+          action: 'edge_create',
+          name: 'MENTIONS',
+          from_type: 'Message',
+          from_name: message_name,
+          to_type: 'User',
+          to_name: mentioned_user.name
+        });
+      }
+    });
+  }
+
+  return signals;
 }
 
 function updateMessageDeleted(payload) {
@@ -146,7 +165,7 @@ function updateMessageDeleted(payload) {
   });
 }
 
-function asyncProcessAllInitialUsersAndChannels(users, channels) {
+function asyncProcessAllInitialUsersAndChannels(bot, users, channels) {
   return asyncWaterfall([
     {
       items: users,
@@ -165,23 +184,36 @@ function asyncProcessAllInitialUsersAndChannels(users, channels) {
       }
     },
     {
-      items: channels.filter(_ => _.is_member),
+      items: channels,
       fn: (channel, done) => {
-        asyncSaveChannelMembers(channel).then(done);
-      }
+        // On startup, only channels the bot is a member of is given
+        // so we request channel info for non-member channels to
+        // get their members
+        if (channel.is_member) {
+          asyncSaveChannelMembers(resp.channel).then((res) => {
+            done([].concat.apply([], res));
+          });
+        }
+        else {
+          bot.api.channels.info({channel: channel.id}, (err, resp) => {
+            asyncSaveChannelMembers(resp.channel).then((res) => {
+              done([].concat.apply([], res));
+            });
+          });
+        }
+      },
+      flatten: true
     }
-  ])
+  ]);
 }
 
 bot.startRTM((err, bot, payload) => {
   if (err) {
     throw new Error(err);
   }
-  sendToQueue(asyncProcessAllInitialUsersAndChannels(payload.users, payload.channels));
-});
-
-controller.on('rtm_open', (bot) => {
-  console.log('rtm opened');
+  asyncProcessAllInitialUsersAndChannels(bot, payload.users, payload.channels).then((res) => {
+    sendToQueue([].concat.apply([], res));
+  });
 });
 
 controller.on('channel_created', (bot, payload) => {
@@ -196,13 +228,41 @@ controller.on('channel_joined', (bot, payload) => {
 
 // listens to ambient messaging in the channels
 controller.on('ambient', (bot, message) => {
-  sendToQueue(saveMessageEvent(message));
+  sendToQueue(saveMessage(message));
 });
 
 controller.on('message_deleted', (bot, payload) => {
   sendToQueue(updateMessageDeleted(payload));
 });
 
+controller.on('channel_deleted', (bot, payload) => {
+  // TODO
+});
+
+controller.on('user_channel_join', (bot, payload) => {
+  // TODO
+});
+
+controller.on('user_channel_left', (bot, payload) => {
+  // TODO
+});
+
 controller.on('message_changed', (bot, payload) => {
+  // TODO
+});
+
+controller.on('team_join', (bot, payload) => {
+  // TODO
+});
+
+controller.on('channel_archive', (bot, payload) => {
+  // TODO
+});
+
+controller.on('channel_unarchive', (bot, payload) => {
+  // TODO
+});
+
+controller.on('channel_rename', (bot, payload) => {
   // TODO
 });

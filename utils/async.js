@@ -12,7 +12,7 @@ export function asyncCollect(items, fn) {
 
 export function asyncWaterfall(steps) {
   let results = [];
-  let prom = Promise.resolve(true);
+  let prom = Promise.resolve([]);
 
   steps.forEach((step) => {
     let promises = step.items.map((item) => {
@@ -21,12 +21,29 @@ export function asyncWaterfall(steps) {
       });
     });
     prom = prom.then((res) => {
+
       results = results.concat(res);
-      return Promise.all(promises);
+
+      if (step.flatten) {
+        return new Promise((resolve, reject) => {
+          Promise.all(promises).then((res) => {
+            resolve([].concat.apply([], res));
+          });
+        });
+      }
+      else {
+        return Promise.all(promises);
+      }
     });
   });
 
-  return prom;
+
+  return new Promise((resolve, reject) => {
+    prom.then((res) => {
+      results = results.concat(res);
+      resolve(results);
+    });
+  });
 }
 
 export function asyncify(fn) {
