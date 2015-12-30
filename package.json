@@ -1,15 +1,20 @@
 {
   "name": "gc-slackbot",
   "version": "1.0.0",
-  "description": "",
+  "description": "A slackbot for graphing public activity on Graph Commons",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
+    "debug": "node debug index.js",
     "lint": "gulp lint-src",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "author": "",
-  "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "https://gitlab.com/ahmetkizilay/gc-slackbot"
+  },
+  "author": "Ahmet Kizilay",
+  "license": "MIT",
   "dependencies": {
     "babel": "^6.3.26",
     "babel-core": "^6.3.26",
@@ -23,5 +28,14 @@
     "babel-eslint": "^4.1.6",
     "gulp": "^3.9.0",
     "gulp-eslint": "^1.1.1"
-  }
+  },
+  "engines": {
+    "node": "4.2.1"
+  },
+  "keywords": [
+    "node",
+    "slack",
+    "graph commons",
+    "botkit"
+  ]
 }

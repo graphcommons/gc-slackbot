@@ -1,0 +1,23 @@
+{
+  "name": "gc-slackbot",
+  "description": "A slackbot for graphing public activity on Graph Commons",
+  "repository": "https://github.com/artsince/gc-slackbot",
+  "keywords": ["node", "slack", "botkit", "graph commons"],
+  "env": {
+    "SLACK_TOKEN": {
+      "description": "Secret token for the Slack Bot",
+      "value": "",
+      "required": true
+    },
+    "GC_TOKEN": {
+      "description": "Graph Commons API key",
+      "value": "",
+      "required": true
+    },
+    "DEBUG": {
+      "description": "Run bot in debug mode",
+      "value": "false",
+      "required": false
+    }
+  }
+}

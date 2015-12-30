@@ -14,13 +14,13 @@ function build(store) {
     },
     save: (obj, cb) => {
       if (!obj.id) {
-        cb({
+        cb && cb({
           msg: 'Id is not specified'
         });
       }
       else {
-        store[obj.id] = obj;
-        cb();
+        store[obj.id] = Object.assign({}, store[obj.id] || {}, obj);
+        cb && cb();
       }
     },
     all: (cb) => {
