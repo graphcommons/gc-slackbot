@@ -5,6 +5,11 @@ import memStorage from './utils/mem-storage';
 import { asyncCollect, asyncWaterfall, asyncify } from './utils/async';
 import graphCommonsConnector from './utils/gc-connector';
 
+/*
+  We have a controller and a bot.
+  Controller manages the environment, acts as a bridge to Slack and creates bots.
+  We only need one bot in this app and it is created below.
+*/
 const controller = Botkit.slackbot({
   debug: process.env.DEBUG === 'true',
   storage: memStorage
@@ -19,6 +24,12 @@ const GC_CONNECTOR = graphCommonsConnector({
   bot: bot
 });
 
+/*
+  Establish connection to Slack.
+  Upon connection a big chunk of data containing user and channel
+  information is received. We pass the data to the GC_CONNECTOR
+  to save the initial data in the storage.
+*/
 bot.startRTM((err, bot, payload) => {
   if (err) {
     throw new Error(err);
@@ -27,7 +38,10 @@ bot.startRTM((err, bot, payload) => {
   GC_CONNECTOR.initialize(payload.users, payload.channels);
 });
 
-// listens to ambient messaging in the channels
+/*
+  listens to ambient messaging in the channels
+  ambient messages are messages that do not mention the bot
+*/
 controller.on('ambient', (bot, message) => {
   GC_CONNECTOR.onMessageReceived(message);
 });
@@ -83,12 +97,11 @@ controller.hears(['graphurl', 'graph url'],'direct_message,direct_mention,mentio
   bot.reply(payload, 'Here is your team graph on Graph Commons ' + graphUrl);
 });
 
-
-
-// This part is not necessary for us at the moment.
-// Setting up a webserver lets us seamlessly deploy to heroku with one click
-
-controller.setupWebserver(process.env.PORT || 5000,function(err,webserver) {
+/*
+  This part is only added for easier deployment to Heroku.
+  Sets up the default webserver to listen on the PORT
+*/
+controller.setupWebserver(process.env.PORT || 5000, (err, webserver) => {
   controller
     .createHomepageEndpoint(controller.webserver);
 });
