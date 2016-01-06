@@ -21,7 +21,8 @@ const bot = controller.spawn({
 
 const GC_CONNECTOR = graphCommonsConnector({
   storage: controller.storage,
-  bot: bot
+  bot: bot,
+  graphId: process.env.GRAPH_ID
 });
 
 /*
@@ -35,7 +36,10 @@ bot.startRTM((err, bot, payload) => {
     throw new Error(err);
   }
 
-  GC_CONNECTOR.initialize(payload.users, payload.channels);
+  GC_CONNECTOR.initialize().then(() => {
+    GC_CONNECTOR.synchronizeTeamData(payload.users, payload.channels);
+  });
+
 });
 
 /*
@@ -56,8 +60,41 @@ controller.on('channel_leave', (bot, payload) => {
 
 controller.on('channel_created', (bot, payload) => {
   let channel = payload.channel;
-  //TODO:
+  GC_CONNECTOR.onChannelCreated(channel);
 });
+
+controller.on('team_join', (bot, payload) => {
+  let user = payload.user;
+  GC_CONNECTOR.onTeamJoined(user);
+});
+
+/*
+  Return graph url in response to users mentioning the graph bot with the
+  graph url phrase.
+*/
+controller.hears(['graphurl', 'graph url'],'direct_message,direct_mention,mention', function(bot, payload) {
+  const graphUrl = GC_CONNECTOR.getGraphUrl();
+  if (graphUrl) {
+    bot.reply(payload, 'Here is your team graph on Graph Commons ' + graphUrl);
+  }
+  else {
+    bot.reply(payload, 'Be patient, your team graph is not creaated yet');
+  }
+});
+
+/*
+  This part is only added for easier deployment to Heroku.
+  Sets up the default webserver to listen on the PORT
+*/
+controller.setupWebserver(process.env.PORT || 5000, (err, webserver) => {
+  controller
+    .createHomepageEndpoint(controller.webserver);
+});
+
+/*
+  Nice to have listeners to be implemented
+*/
+
 
 controller.on('channel_joined', (bot, payload) => {
   let channel = payload.channel;
@@ -76,9 +113,7 @@ controller.on('message_changed', (bot, payload) => {
   // TODO
 });
 
-controller.on('team_join', (bot, payload) => {
-  // TODO
-});
+
 
 controller.on('channel_archive', (bot, payload) => {
   // TODO
@@ -90,18 +125,4 @@ controller.on('channel_unarchive', (bot, payload) => {
 
 controller.on('channel_rename', (bot, payload) => {
   // TODO
-});
-
-controller.hears(['graphurl', 'graph url'],'direct_message,direct_mention,mention', function(bot, payload) {
-  const graphUrl = GC_CONNECTOR.getGraphUrl();
-  bot.reply(payload, 'Here is your team graph on Graph Commons ' + graphUrl);
-});
-
-/*
-  This part is only added for easier deployment to Heroku.
-  Sets up the default webserver to listen on the PORT
-*/
-controller.setupWebserver(process.env.PORT || 5000, (err, webserver) => {
-  controller
-    .createHomepageEndpoint(controller.webserver);
 });

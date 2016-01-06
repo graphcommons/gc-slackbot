@@ -18,12 +18,128 @@ let GraphCommonsConnector = (opts) => {
   let storage = opts.storage;
   let bot = opts.bot;
   let graphId = opts.graphId;
+  let existingGraph = false;
   let graphData = {
     edges: {
       [MEMBER_OF]: {}
     }
   };
 
+  let loadInitialData = function (graphData) {
+    return asyncify((done) => {
+
+      if (graphData.nodes) {
+        graphData.nodes.filter(n => n.type === USER).forEach((n) => {
+          storage.users.save({
+            id: n.properties.user_id,
+            gc_id: n.id
+          });
+        });
+
+        graphData.nodes.filter(n => n.type === CHANNEL).forEach((n) => {
+          storage.channels.save({
+            id: n.properties.channel_id,
+            gc_id: n.id
+          });
+        });
+      }
+
+      if (graphData.edges) {
+        let deleteSignals = [];
+
+        graphData.edges.filter(e => e.name === MEMBER_OF).forEach((e) => {
+          deleteSignals.push({
+            action: 'edge_delete',
+            name: MEMBER_OF,
+            id: e.id,
+            from: e.from,
+            to: e.to
+          });
+        });
+
+        if (deleteSignals.length > 0) {
+          sendToScheduler(deleteSignals);
+        }
+      }
+
+      existingGraph = true;
+      scheduler.start();
+
+      done();
+    });
+  };
+
+  let initialize = function() {
+
+    if (!graphId) {
+      existingGraph = false;
+      return remoteCreateGraph().then((id) => {
+        return asyncify((done) => {
+          graphId = id;
+          scheduler.start();
+          done();
+        });
+      });
+    }
+    else {
+      // download the graph data
+      // delete member channel relations.
+      return remoteDownloadGraph(graphId).then(loadInitialData);
+    }
+  }
+  /*
+    Initial dump of all users and channels from the team.
+    This is the first method to be called after creating the graph on Graph
+    Commons. Builds all the nodes and edges for users and channels and
+    sends to the scheduler.
+  */
+  let synchronizeTeamData = function (users, channels) {
+
+    const job = asyncWaterfall([
+      {
+        items: users,
+        fn: (user, done) => {
+          let userExists = existingGraph && !!storage.users.getSync(user.id);
+          storage.users.save(user, () => {
+            done(!userExists ? buildNewUserSignal(user) : undefined);
+          });
+        }
+      },
+      {
+        items: channels,
+        fn: (channel, done) => {
+          let channelExists = existingGraph && !!storage.channels.getSync(channel.id);
+          storage.channels.save(channel, () => {
+            done(!channelExists ? buildNewChannelSignal(channel) : undefined);
+          });
+        }
+      },
+      {
+        items: channels,
+        fn: (channel, done) => {
+          // On startup, only channels the bot is a member of is given
+          // so we request channel info for non-member channels to
+          // get their members
+          if (channel.is_member) {
+            done(buildUserChannelSignals(channel));
+          }
+          else {
+            bot.api.channels.info({channel: channel.id}, (err, resp) => {
+              done(buildUserChannelSignals(resp.channel));
+            });
+          }
+        },
+        flatten: true
+      }
+    ]);
+
+    sendToScheduler(job);
+  };
+
+  /*
+    if argument is a promise, wait for the resolution, then send to scheduler,
+    else send it right away.
+  */
   let sendToScheduler = function (job) {
 
     if (typeof job.then === 'function') {
@@ -82,48 +198,6 @@ let GraphCommonsConnector = (opts) => {
     });
 
     return signals;
-  };
-
-  let initialize = function (users, channels) {
-
-    const job = asyncWaterfall([
-      {
-        items: users,
-        fn: (user, done) => {
-          storage.users.save(user, () => {
-            done(buildNewUserSignal(user));
-          });
-        }
-      },
-      {
-        items: channels,
-        fn: (channel, done) => {
-          storage.channels.save(channel, () => {
-            done(buildNewChannelSignal(channel));
-          });
-        }
-      },
-      {
-        items: channels,
-        fn: (channel, done) => {
-          // On startup, only channels the bot is a member of is given
-          // so we request channel info for non-member channels to
-          // get their members
-          if (channel.is_member) {
-            done(buildUserChannelSignals(channel));
-          }
-          else {
-            bot.api.channels.info({channel: channel.id}, (err, resp) => {
-              done(buildUserChannelSignals(resp.channel));
-            });
-          }
-        },
-        flatten: true
-      }
-    ]);
-
-    sendToScheduler(job);
-
   };
 
   let onMessageReceived = function (message) {
@@ -196,10 +270,7 @@ let GraphCommonsConnector = (opts) => {
         from_type: USER,
         from_name: user_data.name,
         to_type: CHANNEL,
-        to_name: channel_data.name,
-        properties: {
-          ts: message.ts
-        }
+        to_name: channel_data.name
       });
     }
   };
@@ -213,20 +284,54 @@ let GraphCommonsConnector = (opts) => {
 
       if (edge_id) {
         sendToScheduler({
-          action: 'edge_update',
+          action: 'edge_delete',
           name: MEMBER_OF,
           id: edge_id,
           from: user_data.gc_id,
-          to: channel_data.gc_id,
-          properties: {
-            left_at: message.ts
-          },
-          prev: {
-            left_at: null
-          }
+          to: channel_data.gc_id
         });
       }
     }
+  };
+
+  let onChannelCreated = function (channel) {
+    const channels = storage.channels.allSync();
+    var existingChannel, p;
+    for (p in channels) {
+      if (channels.hasOwnProperty(p)) {
+        if (channels[p].name === channel.name) {
+          existingChannel = channels[p];
+          break;
+        }
+      }
+    }
+
+    if (existingChannel) {
+      sendToScheduler({
+        action: 'node_update',
+        id: existingChannel.gc_id,
+        properties: {
+          channel_id: channel.id
+        },
+        prev: {
+          properties: {
+            channel_id: existingChannel.properties.channel_id
+          }
+        }
+      });
+    }
+    else {
+      storage.channels.save(channel, () => {
+        sendToScheduler(buildNewChannelSignal(channel));
+      });
+    }
+
+  };
+
+  let onTeamJoined = function (user) {
+    storage.users.save(user, () => {
+      sendToScheduler(buildNewUserSignal(user));
+    });
   };
 
   let remoteCreateGraph = function() {
@@ -272,16 +377,7 @@ let GraphCommonsConnector = (opts) => {
           action: 'edgetype_create',
           name: MEMBER_OF,
           directed: 1,
-          properties: [
-            {
-              name: 'joined_at',
-              name_alias: 'joined_at'
-            },
-            {
-              name: 'left_at',
-              name_alias: 'left_at'
-            }
-          ]
+          properties: []
         }
       ]
     });
@@ -308,8 +404,30 @@ let GraphCommonsConnector = (opts) => {
     });
   };
 
-  let remoteSendSignals = function (signals) {
+  let remoteDownloadGraph = function (id) {
+    const options = {
+      url: `${GC_ROOT}/api/v1/graphs/${id}`,
+      method: 'GET',
+      headers: {
+        'Authentication': process.env.GC_TOKEN,
+        'Content-Type': 'application/json'
+      }
+    };
 
+    return asyncify((done, fail) => {
+      request(options, (err, response, body) => {
+        if (err) {
+          return fail(err);
+        }
+
+        const respJSON = JSON.parse(body);
+        done(respJSON.graph);
+      });
+    });
+  };
+
+  let remoteSendSignals = function (signals) {
+    debugger;
     let body = JSON.stringify({
       signals: Array.isArray(signals) ? signals : [signals]
     });
@@ -381,8 +499,14 @@ let GraphCommonsConnector = (opts) => {
     });
   };
 
+  /*
+    URL for the Graph Commons graph. graphId would be null until graph is
+    created.
+  */
   let getGraphUrl = function() {
-    return `${GC_ROOT}/graphs/${graphId}`;
+    if (graphId) {
+      return `${GC_ROOT}/graphs/${graphId}`;
+    }
   };
 
   let scheduler = jobQueue({
@@ -390,19 +514,16 @@ let GraphCommonsConnector = (opts) => {
     jobDone: onSignalsSaved
   });
 
-  if (!graphId) {
-    remoteCreateGraph().then((id) => {
-      graphId = id;
-      scheduler.start();
-    });
-  }
 
   return {
     getGraphUrl,
     initialize,
+    synchronizeTeamData,
     onMessageReceived,
     onUserJoinedChannel,
-    onUserLeftChannel
+    onUserLeftChannel,
+    onChannelCreated,
+    onTeamJoined
   };
 }
 

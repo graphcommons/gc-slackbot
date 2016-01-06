@@ -28,6 +28,9 @@ function build(store) {
     },
     getSync: (id) => {
       return store[id];
+    },
+    allSync: () => {
+      return store;
     }
   }
 };

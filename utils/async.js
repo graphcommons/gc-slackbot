@@ -62,7 +62,7 @@ export function asyncWaterfall(steps) {
   // Finally promise the result
   return new Promise((resolve, reject) => {
     prom.then((res) => {
-      results = results.concat(res);
+      results = results.concat(res).filter(r => r);
       resolve(results);
     });
   });

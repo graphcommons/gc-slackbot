@@ -12,6 +12,7 @@ mention graph bots in a message with `graph url` to see the link to the graph on
 #### Requirements
 * Graph Commons API Key: Create a [Graph Commons](https://graphcommons.com) account if you haven't already. Generate an API key on your [profile](https://graphcommons.com/me/edit).
 * Slack Bot API Token: Create [a new bot user integration](https://my.slack.com/services/new/bot). You will be given a authentication token for the bot.
+* Graph ID: This is optional. If a graph id is supplied, the bot will work with the existing id, instead of creating a new one.
 
 ### Development
 Developed on NodeJS 4.x using ES2015 syntax using babel.
@@ -28,6 +29,7 @@ See package.json scripts for other options.
 #### Environment Variables
 * SLACK_TOKEN=
 * GC_TOKEN=
+* GRAPH_ID=
 * DEBUG=true/false
 You can use `.env` file to load the environment variables.
 
@@ -45,8 +47,6 @@ You can use `.env` file to load the environment variables.
 
 - Edge Types
   * MEMBER_OF: A user is a member of a channel
-    - joined_at
-    - left_at
   * SENT_MESSAGE: A user sends a message
   * BELONGS_TO: A message belongs to a channel
   * MENTIONS: A message mentions a user
