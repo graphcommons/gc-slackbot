@@ -12,6 +12,18 @@ const SENT_MESSAGE = 'SENT_MESSAGE';
 const MENTIONS = 'MENTIONS';
 const MESSAGE_IN = 'MESSAGE_IN';
 
+const promisedRequest = function (opts) {
+  return asyncify((done, fail) => {
+    request(opts, (err, response, body) => {
+      if (err) {
+        return fail();
+      }
+
+      done(JSON.parse(body));
+    });
+  });
+};
+
 let GraphCommonsConnector = (opts) => {
 
   const GC_ROOT = process.env.GC_ROOT || 'https://graphcommons.com';
@@ -334,6 +346,79 @@ let GraphCommonsConnector = (opts) => {
     });
   };
 
+  let fnExtractUserIdFromResponse = function (obj) {
+    if (obj.properties && obj.properties.user_id) {
+      return obj.properties.user_id
+    }
+  };
+
+  /*
+    This function might be a little too complicated. It consolidates requestMentionsFor
+    and requestMentionsBy because there is a lot of overlapping parts in two actions.
+    the dynamic part is inside the forOrBy clause, setting the request url and the
+    node to pick from the response
+  */
+  let requestMentions = forOrBy => user => {
+    return asyncify((done, fail) => {
+      const userData = storage.users.getSync(user);
+      if (!userData) {
+        return fail('User not found');
+      }
+      const userId = userData.gc_id;
+
+      let url;
+      let nodeIndex;
+
+      if (forOrBy) {
+        url = `${GC_ROOT}/api/v1/graphs/${graphId}/paths?fromtype=${USER}&to=${userId}&via=${SENT_MESSAGE},${MENTIONS}&strict=true`,
+        nodeIndex = 0;
+      }
+      else {
+        url = `${GC_ROOT}/api/v1/graphs/${graphId}/paths?totype=${USER}&from=${userId}&via=${SENT_MESSAGE},${MENTIONS}&strict=true`;
+        nodeIndex = 2;
+      }
+
+      const options = {
+        url,
+        method: 'GET',
+        headers: {
+          'Authentication': process.env.GC_TOKEN,
+          'Content-Type': 'application/json'
+        }
+      };
+
+      const fnSucceeded = function (resp) {
+        let arrMentions = [];
+
+        if (resp.paths.length === 0) {
+          done([]);
+        }
+        else {
+          let mentioners = new Set();
+          resp.paths.forEach((p) => {
+            const mentionerGcId = p.nodes[nodeIndex];
+            const mentionerGCObject = resp.nodes[mentionerGcId]
+            const mentionerSlackId = fnExtractUserIdFromResponse(mentionerGCObject);
+
+            if (mentionerSlackId) {
+              mentioners.add(mentionerSlackId);
+            }
+          });
+
+          mentioners.forEach((v) => arrMentions.push(v));
+
+          done(arrMentions);
+        }
+      };
+
+      promisedRequest(options).then(fnSucceeded, fail);
+
+    });
+  };
+
+  let requestMentionsFor = requestMentions(true);
+  let requestMentionsBy = requestMentions(false);
+
   let remoteCreateGraph = function() {
 
     const body = JSON.stringify({
@@ -427,7 +512,7 @@ let GraphCommonsConnector = (opts) => {
   };
 
   let remoteSendSignals = function (signals) {
-    debugger;
+
     let body = JSON.stringify({
       signals: Array.isArray(signals) ? signals : [signals]
     });
@@ -523,8 +608,10 @@ let GraphCommonsConnector = (opts) => {
     onUserJoinedChannel,
     onUserLeftChannel,
     onChannelCreated,
-    onTeamJoined
+    onTeamJoined,
+    requestMentionsFor,
+    requestMentionsBy
   };
-}
+};
 
 export default GraphCommonsConnector;

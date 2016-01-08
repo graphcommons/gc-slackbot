@@ -82,6 +82,41 @@ controller.hears(['graphurl', 'graph url'],'direct_message,direct_mention,mentio
   }
 });
 
+controller.hears(['mention(ing|s|ed)? me[?]?'], 'direct_message', (bot, payload) => {
+  bot.reply(payload, 'Sure, let me check...');
+
+  GC_CONNECTOR.requestMentionsFor(payload.user).then((res) => {
+
+    if (res.length == 0) {
+      bot.reply(payload, 'Nobody mentioned you yet :(');
+    }
+    else {
+      bot.reply(payload, 'some of the people who mentioned you are ' + res.map(v => `<@${v}>`).join(', '));
+    }
+  },
+  function() {
+    bot.reply(payload, 'Sorry, I can\'t get that information right now');
+  });
+
+});
+
+controller.hears(['who (did|am)? i mention(ing|ed)?[?]?', '(users|members) i mention(ing|ed)?'], 'direct_message', (bot, payload) => {
+  bot.reply(payload, 'Sure, let me check...');
+
+  GC_CONNECTOR.requestMentionsBy(payload.user).then((res) => {
+
+    if (res.length === 0) {
+      bot.reply(payload, 'You haven\'t mentioned anyone yet :(');
+    }
+    else {
+      bot.reply(payload, 'some of the people you mentioned are ' + res.map(v => `<@${v}>`).join(', '));
+    }
+  },
+  function() {
+    bot.reply(payload, 'Sorry, I can\'t get that information right now');
+  });
+
+});
 /*
   This part is only added for easier deployment to Heroku.
   Sets up the default webserver to listen on the PORT

@@ -6,8 +6,10 @@ Creates a bot to track public activity in Slack channels. Written for NodeJS.
 This will deploy this app on Heroku to demo it right away. On heroku set up page you will be required to enter authentication tokens for Graph Commons and Slack. See [Requirements](#Requirements) below for details and have the keys ready before running the app.
 
 ### Usage
-Add the bot user to a channel to track public activity in a channel.
-mention graph bots in a message with `graph url` to see the link to the graph on Graph Commons.
+* Add the bot user to a channel to track public activity in a channel.
+* Mention graph bots in a message with `graph url` to see the link to the graph on Graph Commons.
+* In a direct message to the bot, ask `who mentioned me?` or `who did i mention?` to receive the
+list of users you mentioned.
 
 #### Requirements
 * Graph Commons API Key: Create a [Graph Commons](https://graphcommons.com) account if you haven't already. Generate an API key on your [profile](https://graphcommons.com/me/edit).
