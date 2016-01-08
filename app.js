@@ -117,6 +117,10 @@ controller.hears(['who (did|am)? i mention(ing|ed)?[?]?', '(users|members) i men
   });
 
 });
+
+controller.hears(['hang up'], 'direct_message', (bot, payload) => {
+  bot.reply(payload, 'no, you hang up first!');
+});
 /*
   This part is only added for easier deployment to Heroku.
   Sets up the default webserver to listen on the PORT
