@@ -15,7 +15,7 @@
       "required": true
     },
     "GRAPH_ID": {
-      "description": "Use and existing graph id on Graph Commons. Beware that, a new graph will be created on every startup if left blank.",
+      "description": "Use an existing graph id on Graph Commons. Beware that, a new graph will be created on every startup if left blank.",
       "value": "",
       "required": false
     },
