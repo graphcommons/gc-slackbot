@@ -14,7 +14,7 @@ list of users you mentioned.
 #### Requirements
 * Graph Commons API Key: Create a [Graph Commons](https://graphcommons.com) account if you haven't already. Generate an API key on your [profile](https://graphcommons.com/me/edit).
 * Slack Bot API Token: Create [a new bot user integration](https://my.slack.com/services/new/bot). You will be given a authentication token for the bot.
-* Graph ID: This is optional. If a graph id is supplied, the bot will work with the existing id, instead of creating a new one.
+* Graph ID: This is optional, though highly recommended. If a graph id is supplied, the bot will work with the existing id, instead of creating a new one. A good practice would be to create an empty graph to be used by the app prior to deployment. Otherwise a new graph will be created every time the app restarts.
 
 ### Development
 Developed on NodeJS 4.x using ES2015 syntax using babel.
