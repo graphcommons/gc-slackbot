@@ -5,3 +5,4 @@ npm-debug.log*
 team-storage/
 
 newrelic.js
+newrelic-agent.log
