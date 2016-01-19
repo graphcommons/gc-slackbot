@@ -436,11 +436,14 @@ let GraphCommonsConnector = (opts) => {
         },
         prev: {
           properties: {
-            channel_id: existingChannel.properties.channel_id
+            channel_id: graphCache.channels[existingChannel.gc_id]
           }
         }
       });
-      
+
+      channel.gc_id = existingChannel.gc_id;
+      storage.channels.save(channel);
+      graphCache.channels[existingChannel.gc_id] = channel.id;
     }
     else {
       storage.channels.save(channel, () => {

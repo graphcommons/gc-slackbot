@@ -755,4 +755,143 @@ describe('testing gc-connector', () => {
         expect(graphCache.edges['MEMBER_OF']['1-2']).toEqual('3');
     });
   });
+
+  describe('testing channel created', () => {
+
+    describe('when a new channel is created', () => {
+      let mockScheduler;
+      let storage;
+      let graphCache;
+
+      beforeEach(() => {
+        mockScheduler = {
+          addJob: jasmine.createSpy('addJob')
+        };
+
+        storage = memStorage({
+          users: {},
+          channels: {}
+        });
+
+        graphCache = {
+          users: {},
+          channels: {},
+          edges: {
+            'MEMBER_OF': {}
+          }
+        };
+
+        const gcConnector = graphCommonsConnector({
+          storage: storage,
+          cache: graphCache,
+          graphId: 'my graph id',
+          jobQueue: function() {
+            return mockScheduler;
+          }
+        });
+
+        const newChannel = {
+          id: 'C1',
+          name: 'first channel'
+        }
+
+        gcConnector.onChannelCreated(newChannel);
+      });
+
+      it('should send node_create signal', () => {
+
+        expect(mockScheduler.addJob).toHaveBeenCalledWith({
+          action: 'node_create',
+          type: 'Channel',
+          name: 'first channel',
+          properties: {
+            channel_id: 'C1'
+          }
+        });
+      });
+
+      it('should save the channel into storage', () => {
+        expect(storage.channels.getSync('C1')).toEqual({
+          id: 'C1',
+          name: 'first channel'
+        });
+      });
+    });
+
+    describe('when a new channel with the same name as a deleted channel is created', () => {
+      let mockScheduler;
+      let storage;
+      let graphCache;
+
+      beforeEach(() => {
+        mockScheduler = {
+          addJob: jasmine.createSpy('addJob')
+        };
+
+        storage = memStorage({
+          users: {},
+          channels: {
+            'C1': {
+              id: 'C1',
+              name: 'first channel',
+              gc_id: '1'
+            }
+          }
+        });
+
+        graphCache = {
+          users: {},
+          channels: {
+            '1': 'C1'
+          },
+          edges: {
+            'MEMBER_OF': {}
+          }
+        };
+
+        const gcConnector = graphCommonsConnector({
+          storage: storage,
+          cache: graphCache,
+          graphId: 'my graph id',
+          jobQueue: function() {
+            return mockScheduler;
+          }
+        });
+
+        const newChannel = {
+          id: 'C2',
+          name: 'first channel'
+        }
+
+        gcConnector.onChannelCreated(newChannel);
+      });
+
+      it('should send node_update signal', () => {
+        expect(mockScheduler.addJob).toHaveBeenCalledWith({
+          action: 'node_update',
+          id: '1',
+          properties: {
+            channel_id: 'C2'
+          },
+          prev: {
+            properties: {
+              channel_id: 'C1'
+            }
+          }
+        });
+      });
+
+      it('should update the Graph Commons id in channel storage', () => {
+        expect(storage.channels.getSync('C2')).toEqual({
+          id: 'C2',
+          name: 'first channel',
+          gc_id: '1'
+        });
+      });
+
+      it('should update the GraphCommons id mapping for the channel', () => {
+        expect(graphCache.channels['1']).toEqual('C2');
+      });
+    });
+  });
 });
