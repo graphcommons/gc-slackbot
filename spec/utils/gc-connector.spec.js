@@ -91,7 +91,7 @@ describe('testing gc-connector', () => {
           },
           channels: {},
           edges: {
-            "MEMBER_OF": {}
+            'MEMBER_OF': {}
           }
         };
 
@@ -186,7 +186,7 @@ describe('testing gc-connector', () => {
             'C1': '1'
           },
           edges: {
-            "MEMBER_OF": {}
+            'MEMBER_OF': {}
           }
         };
 
@@ -469,7 +469,7 @@ describe('testing gc-connector', () => {
           '2': 'C1'
         },
         edges: {
-          "MEMBER_OF": {}
+          'MEMBER_OF': {}
         }
       };
 
@@ -545,7 +545,7 @@ describe('testing gc-connector', () => {
           '2': 'C1'
         },
         edges: {
-          "MEMBER_OF": {
+          'MEMBER_OF': {
             '1-2': '4'
           }
         }

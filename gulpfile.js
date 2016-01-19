@@ -15,3 +15,17 @@ gulp.task('lint-src', function () {
     .pipe(eslint.format('tap'))
     .pipe(eslint.failOnError());
 });
+
+gulp.task('lint-test', function() {
+  return gulp.src([
+    'spec/*.js',
+    'spec/utils/*.js'
+  ])
+  .pipe(eslint({
+    envs: ['node', 'jasmine']
+  }))
+  .pipe(eslint.format('tap'))
+  .pipe(eslint.failOnError());
+});
+
+gulp.task('lint', ['lint-src', 'lint-test']);

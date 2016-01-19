@@ -7,7 +7,8 @@
     "start": "node index.js",
     "debug": "node debug index.js",
     "test": "node spec/start.js",
-    "lint": "gulp lint-src"
+    "lint": "gulp lint-src",
+    "lint-all": "gulp lint"
   },
   "repository": {
     "type": "git",

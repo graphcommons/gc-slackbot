@@ -27,7 +27,17 @@ cd gc-slackbot
 npm install
 npm start
 ```
-See package.json scripts for other options.
+
+#### Running tests
+Tests are implemented with Jasmine. Since the app needs to connect to Graph Commons and Slack at the same
+time, there are no integration tests at the moment.
+
+To run tests, call:
+```sh
+npm test
+```
+
+See package.json for other npm scripts, such as linting.
 
 #### Environment Variables
 * SLACK_TOKEN=
