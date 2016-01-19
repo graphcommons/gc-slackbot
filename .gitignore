@@ -3,3 +3,5 @@ npm-debug.log*
 
 .env
 team-storage/
+
+newrelic.js

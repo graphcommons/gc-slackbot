@@ -12,7 +12,7 @@ import graphCommonsConnector from './utils/gc-connector';
 */
 const controller = Botkit.slackbot({
   debug: process.env.DEBUG === 'true',
-  storage: memStorage
+  storage: memStorage()
 });
 
 const bot = controller.spawn({
@@ -31,12 +31,14 @@ const GC_CONNECTOR = graphCommonsConnector({
   information is received. We pass the data to the GC_CONNECTOR
   to save the initial data in the storage.
 */
-bot.startRTM((err, bot, payload) => {
-  if (err) {
-    throw new Error(err);
-  }
 
-  GC_CONNECTOR.initialize().then(() => {
+GC_CONNECTOR.initialize().then(() => {
+
+  bot.startRTM((err, bot, payload) => {
+    if (err) {
+      throw new Error(err);
+    }
+
     GC_CONNECTOR.synchronizeTeamData(payload.users, payload.channels);
   });
 
@@ -118,6 +120,24 @@ controller.hears(['who (did|am)? i mention(ing|ed)?[?]?', '(users|members) i men
 
 });
 
+controller.hears(['suggest (a channel|channels) for me'], 'direct_message,direct_mention,mention', (bot, payload) => {
+  bot.reply(payload, 'Sure, give me a sec...');
+
+  GC_CONNECTOR.requestChannelSuggestionsFor(payload.user).then((res) => {
+
+    if (res.length === 0) {
+      bot.reply(payload, 'I can\'t find a channel to suggest for you');
+      bot.reply(payload, 'Are you in all of them?');
+    }
+    else {
+      bot.reply(payload, 'Here are some channels you can check out: ' + res.map(v => `<#${v}>`).join(', '));
+    }
+  },
+  () => {
+    bot.reply(payload, 'Sorry, I can\'t get that information right now...');
+  });
+})
+
 controller.hears(['hang up'], 'direct_message', (bot, payload) => {
   bot.reply(payload, 'no, you hang up first!');
 });
@@ -133,7 +153,6 @@ controller.setupWebserver(process.env.PORT || 5000, (err, webserver) => {
 /*
   Nice to have listeners to be implemented
 */
-
 
 controller.on('channel_joined', (bot, payload) => {
   let channel = payload.channel;

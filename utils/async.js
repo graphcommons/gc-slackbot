@@ -7,6 +7,10 @@ import Promise from 'promise';
   parallel.
 */
 export function asyncCollect(items, fn) {
+  if (!items || items.length == 0) {
+    return Promise.resolve([]);
+  }
+  
   return Promise.all(items.map((item) => {
     return new Promise((resolve, reject) => {
       fn.call(null, item, resolve, reject);

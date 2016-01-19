@@ -30,12 +30,15 @@ let GraphCommonsConnector = (opts) => {
   let storage = opts.storage;
   let bot = opts.bot;
   let graphId = opts.graphId;
-  let existingGraph = false;
-  let graphData = {
+  let existingGraph = graphId !== undefined || graphId !== null;
+  let graphCache = opts.cache || {
     edges: {
       [MEMBER_OF]: {}
-    }
+    },
+    users: {},
+    channels: {}
   };
+  const scheduleCreator = opts.jobQueue || jobQueue;
 
   let loadInitialData = function (graphData) {
     return asyncify((done) => {
@@ -46,6 +49,7 @@ let GraphCommonsConnector = (opts) => {
             id: n.properties.user_id,
             gc_id: n.id
           });
+          graphCache.users[n.id] = n.properties.user_id;
         });
 
         graphData.nodes.filter(n => n.type === CHANNEL).forEach((n) => {
@@ -53,6 +57,7 @@ let GraphCommonsConnector = (opts) => {
             id: n.properties.channel_id,
             gc_id: n.id
           });
+          graphCache.channels[n.id] = n.properties.channel_id;
         });
       }
 
@@ -60,18 +65,14 @@ let GraphCommonsConnector = (opts) => {
         let deleteSignals = [];
 
         graphData.edges.filter(e => e.name === MEMBER_OF).forEach((e) => {
-          deleteSignals.push({
-            action: 'edge_delete',
-            name: MEMBER_OF,
-            id: e.id,
-            from: e.from,
-            to: e.to
-          });
+          let user = storage.users.getSync(graphCache.users[e.from]);
+          if (!user.channels) {
+            user.channels = [];
+          }
+          user.channels.push(graphCache.channels[e.to]);
+          graphCache.edges[MEMBER_OF][`${e.from}-${e.to}`] = e.id;
         });
 
-        if (deleteSignals.length > 0) {
-          sendToScheduler(deleteSignals);
-        }
       }
 
       existingGraph = true;
@@ -84,7 +85,6 @@ let GraphCommonsConnector = (opts) => {
   let initialize = function() {
 
     if (!graphId) {
-      existingGraph = false;
       return remoteCreateGraph().then((id) => {
         return asyncify((done) => {
           graphId = id;
@@ -98,7 +98,8 @@ let GraphCommonsConnector = (opts) => {
       // delete member channel relations.
       return remoteDownloadGraph(graphId).then(loadInitialData);
     }
-  }
+  };
+
   /*
     Initial dump of all users and channels from the team.
     This is the first method to be called after creating the graph on Graph
@@ -106,46 +107,159 @@ let GraphCommonsConnector = (opts) => {
     sends to the scheduler.
   */
   let synchronizeTeamData = function (users, channels) {
+    sendToScheduler(buildTeamDataSynchronizeSignals(users, channels));
+  };
 
-    const job = asyncWaterfall([
-      {
-        items: users,
-        fn: (user, done) => {
-          let userExists = existingGraph && !!storage.users.getSync(user.id);
-          storage.users.save(user, () => {
-            done(!userExists ? buildNewUserSignal(user) : undefined);
+  /*
+    Asynchronously creates Graph Commons signals to synchronize the remote
+    graph with Slack team data.
+  */
+  let buildTeamDataSynchronizeSignals = function (users, channels) {
+    return asyncify((done) => {
+      let signals = [];
+      syncMembers(users).then((memberSignals) => {
+        signals = signals.concat(memberSignals);
+        syncChannels(channels).then((channelSignals) => {
+          signals = signals.concat(channelSignals);
+          syncChannelMembership(channels).then((membershipSignals) => {
+            signals = signals.concat(membershipSignals);
+            done(signals.filter(s => s));
           });
-        }
-      },
-      {
-        items: channels,
-        fn: (channel, done) => {
-          let channelExists = existingGraph && !!storage.channels.getSync(channel.id);
-          storage.channels.save(channel, () => {
-            done(!channelExists ? buildNewChannelSignal(channel) : undefined);
-          });
-        }
-      },
-      {
-        items: channels,
-        fn: (channel, done) => {
-          // On startup, only channels the bot is a member of is given
-          // so we request channel info for non-member channels to
-          // get their members
-          if (channel.is_member) {
-            done(buildUserChannelSignals(channel));
+        });
+      });
+    });
+  };
+
+  let syncMembers = function (users) {
+    return asyncCollect(users, (user, done) => {
+      let userExists = existingGraph && !!storage.users.getSync(user.id);
+      storage.users.save(user, () => {
+        done(!userExists ? buildNewUserSignal(user) : undefined);
+      });
+    });
+  };
+
+  let syncChannels = function (channels) {
+    return asyncCollect(channels, (channel, done) => {
+      let channelExists = existingGraph && !!storage.channels.getSync(channel.id);
+      storage.channels.save(channel, () => {
+        done(!channelExists ? buildNewChannelSignal(channel) : undefined);
+      });
+    });
+  };
+
+  let syncChannelMembership = function (channels) {
+    return retrieveLatestChannelMemberships(channels).
+      then(buildMembershipDifferenceSignals);
+  };
+
+  let retrieveLatestChannelMemberships = function (channels) {
+    return asyncCollect(channels, (channel, done) => {
+      if (channel.is_member) {
+        channel.members.forEach((member) => {
+          let user = storage.users.getSync(member);
+          if (!user.new_channels) {
+            user.new_channels = [];
           }
-          else {
-            bot.api.channels.info({channel: channel.id}, (err, resp) => {
-              done(buildUserChannelSignals(resp.channel));
-            });
-          }
-        },
-        flatten: true
+          user.new_channels.push(channel.id);
+        });
+        done();
       }
-    ]);
+      else {
+        bot.api.channels.info({channel: channel.id}, (err, resp) => {
+          resp.channel.members.forEach((member) => {
+            let user = storage.users.getSync(member);
+            if (!user.new_channels) {
+              user.new_channels = [];
+            }
+            user.new_channels.push(channel.id);
+          });
+          done();
+        });
+      }
+    });
+  };
 
-    sendToScheduler(job);
+  let buildMembershipDifferenceSignals = function() {
+    return asyncify((done) => {
+      let signals = [];
+      let allUsers = storage.users.allSync();
+
+      allUsers.forEach((user_data) => {
+
+        if (!user_data.channels && !user_data.new_channels) {
+          return;
+        }
+
+        if (user_data.channels && user_data.new_channels) {
+
+          user_data.channels.forEach((channel_id) => {
+            if (user_data.new_channels.indexOf(channel_id) < 0) {
+              const channel_data = storage.channels.getSync(channel_id);
+              if (channel_data) {
+                signals.push(deleteMembershipSignal(user_data, channel_data));
+              }
+            }
+          });
+
+          user_data.new_channels.forEach((channel_id) => {
+            if (user_data.channels.indexOf(channel_id) < 0) {
+              const channel_data = storage.channels.getSync(channel_id);
+              if (channel_data) {
+                signals.push(buildMembershipSignal(user_data, channel_data));
+              }
+            }
+          });
+
+        }
+        else if (!user_data.channels) {
+          user_data.new_channels.forEach((channel_id) => {
+            const channel_data = storage.channels.getSync(channel_id);
+            if (channel_data) {
+              signals.push(buildMembershipSignal(user_data, channel_data));
+            }
+          });
+        }
+        else if (!user_data.new_channels) {
+          user_data.channels.forEach((channel_id) => {
+            const channel_data = storage.channels.getSync(channel_id);
+            if (channel_data) {
+              signals.push(deleteMembershipSignal(user_data, channel_data));
+            }
+          });
+        }
+
+        user_data.channels = user_data.new_channels || [];
+        user_data.new_channels = null;
+
+      });
+
+      done(signals);
+    });
+
+  };
+
+  let deleteMembershipSignal = function (user_data, channel_data) {
+    const edge_id = graphCache.edges[MEMBER_OF][`${user_data.gc_id}-${channel_data.gc_id}`];
+    return {
+      action: 'edge_delete',
+      name: MEMBER_OF,
+      id: edge_id,
+      from: user_data.gc_id,
+      to: channel_data.gc_id
+    };
+  };
+
+  let buildMembershipSignal = function (user_data, channel_data) {
+    return {
+      action: 'edge_create',
+      name: MEMBER_OF,
+      from_type: USER,
+      from_name: user_data.name,
+      to_type: CHANNEL,
+      to_name: channel_data.name,
+      properties: {}
+    };
   };
 
   /*
@@ -284,6 +398,10 @@ let GraphCommonsConnector = (opts) => {
         to_type: CHANNEL,
         to_name: channel_data.name
       });
+      if (!user_data.channels) {
+        user_data.channels = [];
+      }
+      user_data.channels.push(channel_data.id);
     }
   };
 
@@ -292,7 +410,7 @@ let GraphCommonsConnector = (opts) => {
     var user_data = storage.users.getSync(message.user);
     var channel_data = storage.channels.getSync(message.channel);
     if (user_data && channel_data) {
-      const edge_id = graphData.edges[MEMBER_OF][`${user_data.gc_id}-${channel_data.gc_id}`];
+      const edge_id = graphCache.edges[MEMBER_OF][`${user_data.gc_id}-${channel_data.gc_id}`];
 
       if (edge_id) {
         sendToScheduler({
@@ -302,6 +420,9 @@ let GraphCommonsConnector = (opts) => {
           from: user_data.gc_id,
           to: channel_data.gc_id
         });
+
+        user_data.channels.splice(user_data.channels.indexOf(message.channel), 1);
+
       }
     }
   };
@@ -309,12 +430,10 @@ let GraphCommonsConnector = (opts) => {
   let onChannelCreated = function (channel) {
     const channels = storage.channels.allSync();
     var existingChannel, p;
-    for (p in channels) {
-      if (channels.hasOwnProperty(p)) {
-        if (channels[p].name === channel.name) {
-          existingChannel = channels[p];
-          break;
-        }
+    for (p = channels.length - 1; p >= 0; p -= 1) {
+      if (channels[p] && channels[p].name === channel.name) {
+        existingChannel = channels[p];
+        break;
       }
     }
 
@@ -327,10 +446,14 @@ let GraphCommonsConnector = (opts) => {
         },
         prev: {
           properties: {
-            channel_id: existingChannel.properties.channel_id
+            channel_id: graphCache.channels[existingChannel.gc_id]
           }
         }
       });
+
+      channel.gc_id = existingChannel.gc_id;
+      storage.channels.save(channel);
+      graphCache.channels[existingChannel.gc_id] = channel.id;
     }
     else {
       storage.channels.save(channel, () => {
@@ -350,6 +473,54 @@ let GraphCommonsConnector = (opts) => {
     if (obj.properties && obj.properties.user_id) {
       return obj.properties.user_id
     }
+  };
+
+  let requestChannelSuggestionsFor = function (user) {
+    return asyncify((done, fail) => {
+      const user_data = storage.users.getSync(user);
+
+      if (!user_data) {
+        return fail('User not found');
+      }
+      const userId = user_data.gc_id;
+      const url = `${GC_ROOT}/api/v1/graphs/${graphId}/collab_filter?from=${userId}&via=${MEMBER_OF}`;
+
+      const options = {
+        url,
+        method: 'GET',
+        headers: {
+          'Authentication': process.env.GC_TOKEN,
+          'Content-Type': 'application/json'
+        }
+      };
+
+      const fnSucceeded = function (resp) {
+        let arrMentions = [];
+
+        if (resp.suggestions.length === 0) {
+          done([]);
+        }
+        else {
+
+          let suggestedChannels = resp.suggestions.map((p) => {
+            if (p.node.type.name === 'Channel' && p.node.properties) {
+              return p.node.properties.channel_id;
+            }
+            else {
+              return undefined;
+            }
+          }).filter(v => v);
+
+          if (suggestedChannels.length > 4) {
+            suggestedChannels = suggestedChannels.slice(0, 4);
+          }
+          done(suggestedChannels);
+        }
+      };
+
+      promisedRequest(options).then(fnSucceeded, fail);
+
+    });
   };
 
   /*
@@ -565,18 +736,20 @@ let GraphCommonsConnector = (opts) => {
                 id: signal.properties.user_id,
                 gc_id: signal.id
               });
+              graphCache.users[signal.id] = signal.properties.user_id;
               break;
             case CHANNEL:
               storage.channels.save({
                 id: signal.properties.channel_id,
                 gc_id: signal.id
               });
+              graphCache.channels[signal.id] = signal.properties.channel_id;
               break;
           }
           break;
         case 'edge_create':
           if (signal.name === MEMBER_OF) {
-            graphData.edges[MEMBER_OF][`${signal.from}-${signal.to}`] = signal.id;
+            graphCache.edges[MEMBER_OF][`${signal.from}-${signal.to}`] = signal.id;
           }
           break;
       }
@@ -594,23 +767,25 @@ let GraphCommonsConnector = (opts) => {
     }
   };
 
-  let scheduler = jobQueue({
+  let scheduler = scheduleCreator({
     jobFn: remoteSendSignals,
     jobDone: onSignalsSaved
   });
 
-
   return {
     getGraphUrl,
     initialize,
+    loadInitialData,
     synchronizeTeamData,
+    buildTeamDataSynchronizeSignals,
     onMessageReceived,
     onUserJoinedChannel,
     onUserLeftChannel,
     onChannelCreated,
     onTeamJoined,
     requestMentionsFor,
-    requestMentionsBy
+    requestMentionsBy,
+    requestChannelSuggestionsFor
   };
 };
 
