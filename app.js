@@ -41,7 +41,7 @@ GC_CONNECTOR.initialize().then(() => {
 
     GC_CONNECTOR.synchronizeTeamData(payload.users, payload.channels);
   });
-  
+
 });
 
 /*
@@ -119,6 +119,24 @@ controller.hears(['who (did|am)? i mention(ing|ed)?[?]?', '(users|members) i men
   });
 
 });
+
+controller.hears(['suggest (a channel|channels) for me'], 'direct_message,direct_mention,mention', (bot, payload) => {
+  bot.reply(payload, 'Sure, give me a sec...');
+
+  GC_CONNECTOR.requestChannelSuggestionsFor(payload.user).then((res) => {
+
+    if (res.length === 0) {
+      bot.reply(payload, 'I can\'t find a channel to suggest for you');
+      bot.reply(payload, 'Are you in all of them?');
+    }
+    else {
+      bot.reply(payload, 'Here are some channels you can check out: ' + res.map(v => `<#${v}>`).join(', '));
+    }
+  },
+  () => {
+    bot.reply(payload, 'Sorry, I can\'t get that information right now...');
+  });
+})
 
 controller.hears(['hang up'], 'direct_message', (bot, payload) => {
   bot.reply(payload, 'no, you hang up first!');

@@ -32,7 +32,8 @@
     "jasmine": "^2.4.1",
     "jasmine-core": "^2.4.1",
     "jasmine-spec-reporter": "^2.4.0",
-    "minimist": "^1.2.0"
+    "minimist": "^1.2.0",
+    "nock": "^5.2.1"
   },
   "engines": {
     "node": "4.2.1"

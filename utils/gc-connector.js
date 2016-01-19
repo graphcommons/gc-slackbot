@@ -70,6 +70,7 @@ let GraphCommonsConnector = (opts) => {
             user.channels = [];
           }
           user.channels.push(graphCache.channels[e.to]);
+          graphCache.edges[MEMBER_OF][`${e.from}-${e.to}`] = e.id;
         });
 
       }
@@ -465,6 +466,54 @@ let GraphCommonsConnector = (opts) => {
     }
   };
 
+  let requestChannelSuggestionsFor = function (user) {
+    return asyncify((done, fail) => {
+      const user_data = storage.users.getSync(user);
+
+      if (!user_data) {
+        return fail('User not found');
+      }
+      const userId = user_data.gc_id;
+      const url = `${GC_ROOT}/api/v1/graphs/${graphId}/collab_filter?from=${userId}&via=${MEMBER_OF}`;
+
+      const options = {
+        url,
+        method: 'GET',
+        headers: {
+          'Authentication': process.env.GC_TOKEN,
+          'Content-Type': 'application/json'
+        }
+      };
+
+      const fnSucceeded = function (resp) {
+        let arrMentions = [];
+
+        if (resp.suggestions.length === 0) {
+          done([]);
+        }
+        else {
+
+          let suggestedChannels = resp.suggestions.map((p) => {
+            if (p.node.type.name === 'Channel' && p.node.properties) {
+              return p.node.properties.channel_id;
+            }
+            else {
+              return undefined;
+            }
+          }).filter(v => v);
+
+          if (suggestedChannels.length > 4) {
+            suggestedChannels = suggestedChannels.slice(0, 4);
+          }
+          done(suggestedChannels);
+        }
+      };
+
+      promisedRequest(options).then(fnSucceeded, fail);
+
+    });
+  };
+
   /*
     This function might be a little too complicated. It consolidates requestMentionsFor
     and requestMentionsBy because there is a lot of overlapping parts in two actions.
@@ -726,7 +775,8 @@ let GraphCommonsConnector = (opts) => {
     onChannelCreated,
     onTeamJoined,
     requestMentionsFor,
-    requestMentionsBy
+    requestMentionsBy,
+    requestChannelSuggestionsFor
   };
 };
 

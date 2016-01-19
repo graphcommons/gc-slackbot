@@ -1,5 +1,6 @@
 'use strict';
 
+import nock from 'nock';
 import graphCommonsConnector from '../../utils/gc-connector';
 import memStorage from '../../utils/mem-storage';
 
@@ -892,6 +893,133 @@ describe('testing gc-connector', () => {
       it('should update the GraphCommons id mapping for the channel', () => {
         expect(graphCache.channels['1']).toEqual('C2');
       });
+    });
+  });
+
+  describe('testing requestChannelSuggestionsFor', () => {
+
+    let gcConnector;
+    const createSampleChannelSuggestion = function (channelName) {
+      return {
+        node: {
+          id: channelName,
+          name: channelName,
+          type: {
+            name: 'Channel'
+          },
+          properties: {
+            channel_id: channelName
+          }
+        }
+      };
+    };
+
+    beforeEach(() => {
+      const storage = memStorage({
+        users: {
+          'U1': {
+            id: 'U1',
+            name: 'first user',
+            gc_id: '1'
+          }
+        },
+        channels: {}
+      });
+
+      const graphCache = {
+        users: {
+          '1': 'U1'
+        },
+        channels: {},
+        edges: {
+          'MEMBER_OF': {}
+        }
+      };
+
+      gcConnector = graphCommonsConnector({
+        storage: storage,
+        cache: graphCache,
+        graphId: 'graphid'
+      });
+
+    });
+
+
+
+    it('should return empty result if there are no suggestions', (done) => {
+      let scope = nock('https://graphcommons.com')
+        .get('/api/v1/graphs/graphid/collab_filter?from=1&via=MEMBER_OF')
+        .reply(200, {
+          suggestions: []
+        });
+
+      const checker = function (resp) {
+        expect(resp.length).toEqual(0);
+        done();
+      };
+
+      gcConnector.requestChannelSuggestionsFor('U1').then(checker);
+    });
+
+    it('should return only channel ids from response', (done) => {
+      let scope = nock('https://graphcommons.com')
+        .get('/api/v1/graphs/graphid/collab_filter?from=1&via=MEMBER_OF')
+        .reply(200, {
+          suggestions: [
+            createSampleChannelSuggestion('C1')
+          ]
+        });
+
+      const checker = function (resp) {
+        expect(resp.length).toEqual(1);
+        expect(resp).toEqual(['C1']);
+        done();
+      };
+
+      gcConnector.requestChannelSuggestionsFor('U1').then(checker);
+    });
+
+    it('should return max 4 results', (done) => {
+      let scope = nock('https://graphcommons.com')
+        .get('/api/v1/graphs/graphid/collab_filter?from=1&via=MEMBER_OF')
+        .reply(200, {
+          suggestions: [
+            createSampleChannelSuggestion('C1'),
+            createSampleChannelSuggestion('C2'),
+            createSampleChannelSuggestion('C3'),
+            createSampleChannelSuggestion('C4'),
+            createSampleChannelSuggestion('C5')
+          ]
+        });
+
+      const checker = function (resp) {
+        expect(resp.length).toEqual(4);
+        done();
+      };
+
+      gcConnector.requestChannelSuggestionsFor('U1').then(checker);
+    });
+
+    it('should not return results with undefined channel_id', (done) => {
+      let faultyResult = createSampleChannelSuggestion('C1');
+      faultyResult.node.properties.channel_id = null;
+
+      let scope = nock('https://graphcommons.com')
+        .get('/api/v1/graphs/graphid/collab_filter?from=1&via=MEMBER_OF')
+        .reply(200, {
+          suggestions: [
+            faultyResult,
+            createSampleChannelSuggestion('C2'),
+          ]
+        });
+
+      const checker = function (resp) {
+        expect(resp.length).toEqual(1);
+        expect(resp).toEqual(['C2']);
+        done();
+      };
+
+      gcConnector.requestChannelSuggestionsFor('U1').then(checker);
     });
   });
 });
