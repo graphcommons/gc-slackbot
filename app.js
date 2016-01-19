@@ -12,7 +12,7 @@ import graphCommonsConnector from './utils/gc-connector';
 */
 const controller = Botkit.slackbot({
   debug: process.env.DEBUG === 'true',
-  storage: memStorage
+  storage: memStorage()
 });
 
 const bot = controller.spawn({
@@ -31,15 +31,17 @@ const GC_CONNECTOR = graphCommonsConnector({
   information is received. We pass the data to the GC_CONNECTOR
   to save the initial data in the storage.
 */
-bot.startRTM((err, bot, payload) => {
-  if (err) {
-    throw new Error(err);
-  }
 
-  GC_CONNECTOR.initialize().then(() => {
+GC_CONNECTOR.initialize().then(() => {
+
+  bot.startRTM((err, bot, payload) => {
+    if (err) {
+      throw new Error(err);
+    }
+
     GC_CONNECTOR.synchronizeTeamData(payload.users, payload.channels);
   });
-
+  
 });
 
 /*
@@ -133,7 +135,6 @@ controller.setupWebserver(process.env.PORT || 5000, (err, webserver) => {
 /*
   Nice to have listeners to be implemented
 */
-
 
 controller.on('channel_joined', (bot, payload) => {
   let channel = payload.channel;

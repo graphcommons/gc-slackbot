@@ -24,21 +24,24 @@ function build(store) {
       }
     },
     all: (cb) => {
-      cb(null, Object.keys(store).map(k => store[k]));
+      cb && cb(null, Object.keys(store).map(k => store[k]));
     },
     getSync: (id) => {
       return store[id];
     },
     allSync: () => {
-      return store;
+      return Object.keys(store).map(k => store[k]);
     }
   }
 };
 
-const storage = {
-  teams: build({}),
-  users: build({}),
-  channels: build({})
+const storageCreator = function(opts) {
+  let initialData = opts || {};
+  return {
+    teams: build(initialData.teams || {}),
+    users: build(initialData.users || {}),
+    channels: build(initialData.channels || {})
+  };
 };
 
-export default storage;
+export default storageCreator;
