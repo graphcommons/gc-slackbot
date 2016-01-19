@@ -196,14 +196,18 @@ let GraphCommonsConnector = (opts) => {
           user_data.channels.forEach((channel_id) => {
             if (user_data.new_channels.indexOf(channel_id) < 0) {
               const channel_data = storage.channels.getSync(channel_id);
-              signals.push(deleteMembershipSignal(user_data, channel_data));
+              if (channel_data) {
+                signals.push(deleteMembershipSignal(user_data, channel_data));
+              }
             }
           });
 
           user_data.new_channels.forEach((channel_id) => {
             if (user_data.channels.indexOf(channel_id) < 0) {
               const channel_data = storage.channels.getSync(channel_id);
-              signals.push(buildMembershipSignal(user_data, channel_data));
+              if (channel_data) {
+                signals.push(buildMembershipSignal(user_data, channel_data));
+              }
             }
           });
 
@@ -211,18 +215,23 @@ let GraphCommonsConnector = (opts) => {
         else if (!user_data.channels) {
           user_data.new_channels.forEach((channel_id) => {
             const channel_data = storage.channels.getSync(channel_id);
-            signals.push(buildMembershipSignal(user_data, channel_data));
+            if (channel_data) {
+              signals.push(buildMembershipSignal(user_data, channel_data));
+            }
           });
         }
         else if (!user_data.new_channels) {
           user_data.channels.forEach((channel_id) => {
             const channel_data = storage.channels.getSync(channel_id);
-            signals.push(deleteMembershipSignal(user_data, channel_data));
+            if (channel_data) {
+              signals.push(deleteMembershipSignal(user_data, channel_data));
+            }
           });
         }
 
         user_data.channels = user_data.new_channels || [];
         user_data.new_channels = null;
+
       });
 
       done(signals);
