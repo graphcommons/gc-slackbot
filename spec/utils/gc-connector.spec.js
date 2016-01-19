@@ -583,4 +583,176 @@ describe('testing gc-connector', () => {
     });
   });
 
+  describe('test Graph Commons callback', () => {
+
+    let storage;
+    let mockScheduler;
+    let graphCache;
+
+    beforeEach(() => {
+      mockScheduler = jasmine.createSpy('mockScheduler');
+    });
+
+    it('should map Graph Commons id to Slack channel id on node_create', () => {
+      storage = memStorage({
+        users: {
+          'C1': {
+            id: 'C1',
+            name: 'first channel'
+          }
+        },
+        channels: {}
+      });
+
+      graphCache = {
+        users: {},
+        channels: {},
+        edges: {
+          'MEMBER_OF': {}
+        }
+      };
+
+      const gcConnector = graphCommonsConnector({
+        storage: storage,
+        cache: graphCache,
+        graphId: 'my graph id',
+        jobQueue: mockScheduler
+      });
+
+      const jobDoneCallback = mockScheduler.calls.argsFor(0)[0].jobDone;
+
+      jobDoneCallback({
+        graph: {
+          signals: [
+            {
+              action: 'node_create',
+              id: '1',
+              name: 'first channel',
+              type: 'Channel',
+              type_id: '2',
+              properties: {
+                channel_id: 'C1'
+              }
+            }
+          ]
+        }
+      });
+
+      expect(storage.channels.getSync('C1').gc_id).toEqual('1');
+      expect(graphCache.channels['1']).toBeDefined();
+      expect(graphCache.channels['1']).toEqual('C1');
+    });
+
+    it('should map Graph Commons id to Slack user id on node_create', () => {
+      storage = memStorage({
+        users: {
+          'U1': {
+            id: 'U1',
+            name: 'first user',
+            channels: []
+          }
+        },
+        channels: {}
+      });
+
+      graphCache = {
+        users: {},
+        channels: {},
+        edges: {
+          'MEMBER_OF': {}
+        }
+      };
+
+      const gcConnector = graphCommonsConnector({
+        storage: storage,
+        cache: graphCache,
+        graphId: 'my graph id',
+        jobQueue: mockScheduler
+      });
+
+      const jobDoneCallback = mockScheduler.calls.argsFor(0)[0].jobDone;
+
+      jobDoneCallback({
+        graph: {
+          signals: [
+            {
+              action: 'node_create',
+              id: '1',
+              name: 'first user',
+              type: 'User',
+              type_id: '2',
+              properties: {
+                user_id: 'U1'
+              }
+            }
+          ]
+        }
+      });
+
+      expect(storage.users.getSync('U1').gc_id).toEqual('1');
+      expect(graphCache.users['1']).toBeDefined();
+      expect(graphCache.users['1']).toEqual('U1');
+    });
+
+    it('should store Graph Commons edge for User Channel membership on edge_create', () => {
+        storage = memStorage({
+          users: {
+            'U1': {
+              id: 'U1',
+              name: 'first user',
+              gc_id: '1',
+              channels: [
+                'C1'
+              ]
+            }
+          },
+          channels: {
+            'C1': {
+              id: 'C1',
+              name: 'first channel',
+              gc_id: '2'
+            }
+          }
+        });
+
+        graphCache = {
+          users: {
+            '1': 'U1'
+          },
+          channels: {
+            '2': 'C1'
+          },
+          edges: {
+            'MEMBER_OF': {}
+          }
+        };
+
+        const gcConnector = graphCommonsConnector({
+          storage: storage,
+          cache: graphCache,
+          graphId: 'my graph id',
+          jobQueue: mockScheduler
+        });
+
+        const jobDoneCallback = mockScheduler.calls.argsFor(0)[0].jobDone;
+
+        jobDoneCallback({
+          graph: {
+            signals: [
+              {
+                action: 'edge_create',
+                id: '3',
+                name: 'MEMBER_OF',
+                name_id: 'name id',
+                from: '1',
+                to: '2'
+              }
+            ]
+          }
+        });
+
+        expect(storage.users.getSync('U1').gc_id).toEqual('1');
+        expect(graphCache.edges['MEMBER_OF']['1-2']).toEqual('3');
+    });
+  });
 });

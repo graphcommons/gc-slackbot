@@ -440,6 +440,7 @@ let GraphCommonsConnector = (opts) => {
           }
         }
       });
+      
     }
     else {
       storage.channels.save(channel, () => {
@@ -674,12 +675,14 @@ let GraphCommonsConnector = (opts) => {
                 id: signal.properties.user_id,
                 gc_id: signal.id
               });
+              graphCache.users[signal.id] = signal.properties.user_id;
               break;
             case CHANNEL:
               storage.channels.save({
                 id: signal.properties.channel_id,
                 gc_id: signal.id
               });
+              graphCache.channels[signal.id] = signal.properties.channel_id;
               break;
           }
           break;
