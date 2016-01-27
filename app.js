@@ -1,9 +1,16 @@
 'use strict';
 
 import Botkit from 'botkit';
+import winston from 'winston';
 import memStorage from './utils/mem-storage';
 import { asyncCollect, asyncWaterfall, asyncify } from './utils/async';
 import graphCommonsConnector from './utils/gc-connector';
+
+var logger = new (winston.Logger)({
+  transports: [
+    new winston.transports.File({ filename: 'logs.log' })
+  ]
+});
 
 /*
   We have a controller and a bot.
@@ -31,19 +38,25 @@ const GC_CONNECTOR = graphCommonsConnector({
   information is received. We pass the data to the GC_CONNECTOR
   to save the initial data in the storage.
 */
-
-GC_CONNECTOR.initialize().then(() => {
-
+const connectToRTM = function() {
   bot.startRTM((err, bot, payload) => {
     if (err) {
+      logger.error('Unable to start RTM');
       throw new Error(err);
     }
 
+    logger.info('RTM Started');
     GC_CONNECTOR.synchronizeTeamData(payload.users, payload.channels);
   });
+};
 
+GC_CONNECTOR.initialize().then(connectToRTM);
+
+controller.on('rtm_close', (bot, message) => {
+  logger.info('RTM Closed');
+  logger.info('Will try to reconnect');
+  connectToRTM();
 });
-
 /*
   listens to ambient messaging in the channels
   ambient messages are messages that do not mention the bot

@@ -6,3 +6,5 @@ team-storage/
 
 newrelic.js
 newrelic_agent.log
+
+logs.log
