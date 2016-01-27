@@ -336,11 +336,26 @@ let GraphCommonsConnector = (opts) => {
     }
 
     const message_name = `${user_data.name} - ${message.ts}`;
+    let messageText = message.text;
+
+    const mentionedUsers = new Set();
+    let mentionMatches = messageText.match(/<@(U[^\s]+)>/g);
+    if (mentionMatches && mentionMatches.length > 0) {
+      mentionMatches = mentionMatches.map(m => m.substring(2, m.length - 1));
+      mentionMatches.forEach( (match) => {
+        let mentioned_user = storage.users.getSync(match);
+        if (mentioned_user) {
+          messageText = messageText.replace(new RegExp(`<@${match}>`, 'g'), '@'+ mentioned_user.name);
+          mentionedUsers.add(mentioned_user.name);
+        }
+      });
+    }
+
     signals.push({
       action: 'node_create',
       type: MESSAGE,
       name: message_name,
-      description: message.text,
+      description: messageText,
       properties: {
         ts: message.ts,
         channel_name: channel_data.name
@@ -365,22 +380,18 @@ let GraphCommonsConnector = (opts) => {
       to_name: channel_data.name
     });
 
-    let mentionMatches = message.text.match(/<@(U[^\s]+)>/);
-    if (mentionMatches && mentionMatches.length > 0) {
-      mentionMatches.forEach( (match) => {
-        let mentioned_user = storage.users.getSync(match);
-        if (mentioned_user) {
-          signals.push({
-            action: 'edge_create',
-            name: MENTIONS,
-            from_type: 'Message',
-            from_name: message_name,
-            to_type: 'User',
-            to_name: mentioned_user.name
-          });
-        }
+
+    mentionedUsers.forEach( (u) => {
+      signals.push({
+        action: 'edge_create',
+        name: MENTIONS,
+        from_type: 'Message',
+        from_name: message_name,
+        to_type: 'User',
+        to_name: u
       });
-    }
+    });
+
 
     sendToScheduler(signals);
   };

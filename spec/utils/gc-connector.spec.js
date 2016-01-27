@@ -1022,4 +1022,156 @@ describe('testing gc-connector', () => {
       gcConnector.requestChannelSuggestionsFor('U1').then(checker);
     });
   });
+
+  describe('testing mentions', () => {
+    let mockScheduler;
+    let storage;
+    let gcConnector;
+
+    beforeEach(() => {
+      mockScheduler = {
+        addJob: jasmine.createSpy('addJob')
+      };
+
+      storage = memStorage({
+        users: {
+          'U1': {
+            id: 'U1',
+            name: 'first-user',
+            gc_id: '1'
+          },
+          'U2': {
+            id: 'U2',
+            name: 'second-user',
+            gc_id: '2'
+          }
+        },
+        channels: {
+          'C1': {
+            id: 'C1',
+            name: 'channel-one',
+            gc_id: '3'
+          }
+        }
+      });
+
+      const graphCache = {
+        users: {
+          '1': 'U1',
+          '2': 'U2'
+        },
+        channels: {
+          '3': 'C1'
+        },
+        edges: {
+          'MEMBER_OF': {}
+        }
+      };
+
+      gcConnector = graphCommonsConnector({
+        storage: storage,
+        cache: graphCache,
+        graphId: 'my graph id',
+        jobQueue: function() {
+          return mockScheduler;
+        }
+      });
+
+
+    });
+
+    it('should convert mention text to human readable username', (done) => {
+      gcConnector.onMessageReceived({
+        user: 'U1',
+        channel: 'C1',
+        ts: Date.now().toString(),
+        text: 'Here I mention <@U2>'
+      });
+
+      const createdSignals = mockScheduler.addJob.calls.argsFor(0)[0];
+      const createMessageSignal = createdSignals[0];
+      expect(createMessageSignal.description).toEqual('Here I mention @second-user');
+      done();
+    });
+
+    it('should convert all instances of the same mention in the text', (done) => {
+      gcConnector.onMessageReceived({
+        user: 'U1',
+        channel: 'C1',
+        ts: Date.now().toString(),
+        text: 'Here I mention <@U2> again <@U2>'
+      });
+
+      const createdSignals = mockScheduler.addJob.calls.argsFor(0)[0];
+      const createMessageSignal = createdSignals[0];
+      expect(createMessageSignal.description).toEqual('Here I mention @second-user again @second-user');
+      done();
+    });
+
+    it('should convert different user mentions in the text', (done) => {
+      gcConnector.onMessageReceived({
+        user: 'U1',
+        channel: 'C1',
+        ts: Date.now().toString(),
+        text: 'Here I mention <@U2> and <@U1>'
+      });
+
+      const createdSignals = mockScheduler.addJob.calls.argsFor(0)[0];
+      const createMessageSignal = createdSignals[0];
+      expect(createMessageSignal.description).toEqual('Here I mention @second-user and @first-user');
+      done();
+    });
+
+    it('should not throw error if mentioned user is not defined', (done) => {
+      expect(() => {
+        gcConnector.onMessageReceived({
+          user: 'U1',
+          channel: 'C1',
+          ts: Date.now().toString(),
+          text: 'Here I mention <@U5>'
+        });
+      }).not.toThrow();
+
+      const createdSignals = mockScheduler.addJob.calls.argsFor(0)[0];
+      const createMessageSignal = createdSignals[0];
+      expect(createMessageSignal.description).toMatch(/<@U5/);
+      done();
+    });
+
+    it('should create an edge signal for mentioned user', (done) => {
+      const message = {
+        user: 'U1',
+        channel: 'C1',
+        ts: Date.now().toString(),
+        text: 'Here I mention <@U2>'
+      };
+      gcConnector.onMessageReceived(message);
+
+      const createdSignals = mockScheduler.addJob.calls.argsFor(0)[0];
+      const mentionEdgeSignal = createdSignals[createdSignals.length - 1];
+      expect(mentionEdgeSignal).toEqual({
+        action: 'edge_create',
+        name: 'MENTIONS',
+        from_type: 'Message',
+        from_name: `first-user - ${message.ts}`,
+        to_type: 'User',
+        to_name: 'second-user'
+      })
+      done();
+    });
+
+    it('should not create duplicate edge when user is mentioned multiple times in a message', (done) => {
+      const message = {
+        user: 'U1',
+        channel: 'C1',
+        ts: Date.now().toString(),
+        text: 'Here I mention <@U2> again <@U2>'
+      };
+      gcConnector.onMessageReceived(message);
+
+      const createdSignals = mockScheduler.addJob.calls.argsFor(0)[0];
+      expect(createdSignals.length).toBe(4);
+      done();
+    });
+  });
 });
