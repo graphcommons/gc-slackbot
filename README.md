@@ -2,7 +2,7 @@
 
 Creates a bot to track public activity in Slack channels. Written for NodeJS.
 
-#### Quick Deploy [![Deploy](https://www.herokucdn.com/deploy/button.svg)](https://heroku.com/deploy?template=https://github.com/artsince/gc-slackbot)
+#### Quick Deploy [![Deploy](https://www.herokucdn.com/deploy/button.svg)](https://heroku.com/deploy?template=https://github.com/graphcommons/gc-slackbot)
 This will deploy this app on [Heroku](https://heroku.com) to demo it right away. On the Heroku deployment setup page you will be required to enter authentication tokens for Graph Commons and Slack. See [Requirements](#Requirements) below for details and have the required keys ready before starting the app.
 
 #### Usage
@@ -28,7 +28,7 @@ npm install
 npm start
 ```
 
-#### Running tests [ ![Codeship Status for artsince/gc-slackbot](https://codeship.com/projects/b7b5e5f0-a0ed-0133-b6b7-02e3d0645add/status?branch=master)](https://codeship.com/projects/128302)
+#### Running tests [ ![Codeship Status for graphcommons/gc-slackbot](https://codeship.com/projects/80427530-b6c3-0133-30ec-5ef9b905983d/status?branch=master)](https://codeship.com/projects/134462)
 Tests are implemented with Jasmine. Since the app needs to connect to Graph Commons and Slack at the same
 time, there are no integration tests at the moment.
 
