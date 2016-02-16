@@ -1,16 +1,12 @@
 'use strict';
 
 import Botkit from 'botkit';
-import winston from 'winston';
+import { createLogger } from './utils/logger';
 import memStorage from './utils/mem-storage';
 import { asyncCollect, asyncWaterfall, asyncify } from './utils/async';
 import graphCommonsConnector from './utils/gc-connector';
 
-var logger = new (winston.Logger)({
-  transports: [
-    new winston.transports.File({ filename: 'logs.log' })
-  ]
-});
+var logger = createLogger();
 
 /*
   We have a controller and a bot.
