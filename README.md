@@ -44,6 +44,7 @@ See package.json for other npm scripts, such as linting.
 * GC_TOKEN=
 * GRAPH_ID=
 * DEBUG=true/false (runs howdy slackbot in debug mode with plenty of logging)
+* LOG_TO_FILE= pass this parameter to add logs to logs.log file. 
 
 You can use a `.env` file to store environment variables. The app will load them
 on startup.
